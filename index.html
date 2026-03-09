@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovelToComic AI - Generador Automático</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Inter:wght@300;400;600;800&family=Bangers&family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #ec4899;
+            --accent: #f59e0b;
+            --dark: #0f172a;
+            --paper: #fef3c7;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .novel-font { font-family: 'Playfair Display', serif; }
+        .comic-font { font-family: 'Bangers', cursive; letter-spacing: 1px; }
+        .speech-font { font-family: 'Comic Neue', cursive; font-weight: 700; }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .comic-panel {
+            background: white;
+            border: 4px solid #000;
+            box-shadow: 8px 8px 0px #000;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            break-inside: avoid;
+        }
+        
+        .comic-panel:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 10px 10px 0px #000;
+        }
+        
+        .comic-panel.processing {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        .speech-bubble {
+            position: absolute;
+            background: white;
+            border: 3px solid #000;
+            border-radius: 50%;
+            padding: 12px 16px;
+            font-size: 13px;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.2);
+            z-index: 20;
+            max-width: 220px;
+            min-width: 80px;
+            cursor: move;
+            user-select: none;
+            transition: transform 0.1s;
+            line-height: 1.3;
+        }
+        
+        .speech-bubble:hover {
+            transform: scale(1.05);
+            z-index: 30;
+            box-shadow: 6px 6px 0px rgba(0,0,0,0.3);
+        }
+        
+        .speech-bubble.editing {
+            background: #fef3c7;
+            border-color: #6366f1;
+            z-index: 40;
+        }
+        
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -18px;
+            left: 30%;
+            width: 0;
+            height: 0;
+            border: 15px solid transparent;
+            border-top-color: #000;
+            border-bottom: 0;
+            margin-left: -15px;
+            margin-bottom: -3px;
+        }
+        
+        .bubble-tail-left::after {
+            left: 20%;
+        }
+        
+        .bubble-tail-right::after {
+            left: 80%;
+        }
+        
+        .bubble-edit-btn {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            width: 24px;
+            height: 24px;
+            background: #6366f1;
+            border: 2px solid #000;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            color: white;
+            z-index: 50;
+        }
+        
+        .speech-bubble:hover .bubble-edit-btn {
+            display: flex;
+        }
+        
+        .thought-bubble {
+            border-radius: 30px;
+            border-style: dashed;
+        }
+        
+        .thought-bubble::after {
+            border-top-color: #000;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+        }
+        
+        .shout-bubble {
+            border-radius: 10px;
+            background: #ffeb3b;
+        }
+        
+        .editor-paper {
+            background: var(--paper);
+            background-image: 
+                linear-gradient(90deg, transparent 98%, #e5e7eb 98%),
+                linear-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 100% 100%, 100% 2rem;
+            line-height: 2rem;
+            box-shadow: 
+                0 1px 1px rgba(0,0,0,0.15), 
+                0 10px 0 -5px #eee, 
+                0 10px 1px -4px rgba(0,0,0,0.15), 
+                0 20px 0 -10px #eee, 
+                0 20px 1px -9px rgba(0,0,0,0.15);
+        }
+        
+        .panel-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            padding: 2rem;
+        }
+        
+        .loading-pulse {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0.5; }
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #6366f1, #ec4899);
+            transition: width 0.3s ease;
+        }
+        
+        .scene-card {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+        
+        .scene-card:hover {
+            border-left-color: #6366f1;
+            transform: translateX(5px);
+        }
+        
+        .scene-card.processing {
+            border-left-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        
+        .scene-card.completed {
+            border-left-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        
+        .dragging {
+            opacity: 0.8;
+            cursor: grabbing !important;
+        }
+        
+        .narration-box {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            font-family: 'Playfair Display', serif;
+            font-size: 12px;
+            font-style: italic;
+            border-radius: 4px;
+            max-width: 200px;
+            z-index: 15;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #6366f1; 
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4f46e5; 
+        }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 glass-panel border-b border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-pink-500 rounded-lg flex items-center justify-center text-2xl">✦</div>
+                    <span class="text-2xl font-bold gradient-text novel-font">NovelToComic AI</span>
+                </div>
+                <div class="hidden md:flex space-x-8">
+                    <button onclick="switchTab('write')" class="nav-btn hover:text-indigo-400 transition font-semibold">✍️ Escribir</button>
+                    <button onclick="switchTab('process')" class="nav-btn hover:text-pink-400 transition font-semibold">⚡ Procesar</button>
+                    <button onclick="switchTab('comic')" class="nav-btn hover:text-amber-400 transition font-semibold">💬 Cómic</button>
+                    <button onclick="switchTab('export')" class="nav-btn hover:text-emerald-400 transition font-semibold">📥 Exportar</button>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="processing-indicator" class="hidden flex items-center gap-2">
+                        <div class="w-3 h-3 bg-amber-400 rounded-full animate-pulse"></div>
+                        <span class="text-sm text-amber-400">Procesando...</span>
+                    </div>
+                    <div id="ready-indicator" class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-green-400 rounded-full"></div>
+                        <span class="text-sm text-gray-400">Listo</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="pt-24 pb-12 px-4 max-w-7xl mx-auto">
+        
+        <!-- Hero Section -->
+        <div id="hero" class="text-center mb-16">
+            <h1 class="text-6xl md:text-8xl font-black mb-6 novel-font bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
+                Novela a Cómic<br>Automático
+            </h1>
+            <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-8">
+                Escribe tu historia. La IA generará las imágenes y colocará automáticamente los diálogos en bocadillos editables.
+            </p>
+            <div class="flex justify-center gap-4 flex-wrap">
+                <button onclick="startAutoProcess()" class="btn-cyber px-8 py-4 rounded-full text-white font-bold text-lg shadow-2xl hover:scale-105 transition transform flex items-center gap-2">
+                    <span>✨</span> Crear Cómic Automático
+                </button>
+                <button onclick="loadDemo()" class="px-8 py-4 rounded-full border-2 border-white/30 hover:bg-white/10 transition font-semibold">
+                    Cargar Ejemplo
+                </button>
+            </div>
+        </div>
+
+        <!-- Write Tab -->
+        <div id="write-tab" class="tab-content">
+            <div class="glass-panel rounded-3xl p-8 mb-8">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-3xl font-bold novel-font text-indigo-300">Editor de Novela</h2>
+                        <p class="text-sm text-gray-400 mt-1">Escribe o pega tu texto. Detectaremos automáticamente escenas y diálogos.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="analyzeNovel()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition text-sm font-semibold flex items-center gap-2">
+                            <span>🔍</span> Analizar
+                        </button>
+                        <button onclick="clearText()" class="px-4 py-2 bg-red-600/50 hover:bg-red-600 rounded-lg transition text-sm font-semibold">
+                            Limpiar
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mb-4 flex gap-6 text-sm text-gray-400 bg-black/20 p-3 rounded-lg inline-flex">
+                    <span id="word-count">0 palabras</span>
+                    <span id="scene-count">0 escenas</span>
+                    <span id="dialog-count">0 diálogos</span>
+                </div>
+
+                <textarea id="novel-input" 
+                    class="editor-paper w-full h-[500px] p-8 text-gray-800 text-lg novel-font rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/50 resize-none"
+                    placeholder="Escribe tu novela aquí... 
+
+La IA detectará automáticamente:
+• Escenas descriptivas (para generar imágenes)
+• Diálogos entre comillas o guiones (para bocadillos)
+• Pensamientos en cursiva (para nubes de pensamiento)
+• Acciones importantes
+
+Ejemplo:
+---
+El sol se filtraba entre las cortinas. Elena se incorporó sobresaltada.
+
+—¿Quién está ahí? —susurró, temblando.
+
+De las sombras emergió un hombre alto. Sus ojos brillaban con intensidad.
+
+—Soy el guardián del tiempo —dijo con voz profunda—. Vengo a llevarte.
+
+Elena no podía creerlo. «Esto debe ser un sueño», pensó.
+---"></textarea>
+                
+                <div class="mt-6 flex justify-between items-center">
+                    <div class="flex gap-2">
+                        <select id="genre-select" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                            <option value="fantasy">Fantasía</option>
+                            <option value="scifi">Ciencia Ficción</option>
+                            <option value="noir">Noir/Detective</option>
+                            <option value="romance">Romance</option>
+                            <option value="horror">Terror</option>
+                            <option value="adventure">Aventura</option>
+                        </select>
+                        <select id="style-select" class="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+                            <option value="comic">Estilo Cómic</option>
+                            <option value="manga">Manga</option>
+                            <option value="realistic">Realista</option>
+                            <option value="watercolor">Acuarela</option>
+                        </select>
+                    </div>
+                    <button onclick="startAutoProcess()" class="btn-cyber px-6 py-3 rounded-xl text-white font-bold shadow-lg hover:scale-105 transition flex items-center gap-2">
+                        <span>⚡</span> Generar Todo Automático
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Process Tab -->
+        <div id="process-tab" class="tab-content hidden">
+            <div class="glass-panel rounded-3xl p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold novel-font text-pink-300">Procesamiento Automático</h2>
+                    <button onclick="switchTab('comic')" class="px-4 py-2 bg-pink-600 hover:bg-pink-700 rounded-lg font-semibold transition">
+                        Ver Cómic →
+                    </button>
+                </div>
+
+                <!-- Progress -->
+                <div class="mb-8 bg-gray-900/50 rounded-2xl p-6 border border-white/10">
+                    <div class="flex justify-between mb-2">
+                        <span class="font-semibold">Progreso Total</span>
+                        <span id="progress-text" class="text-pink-400">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                        <div id="progress-bar" class="progress-bar h-full w-0"></div>
+                    </div>
+                    <div id="current-action" class="mt-2 text-sm text-gray-400">Esperando para iniciar...</div>
+                </div>
+
+                <!-- Scenes List -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6" id="scenes-container">
+                    <!-- Scenes will appear here -->
+                    <div class="col-span-full text-center py-12 text-gray-500">
+                        <div class="text-6xl mb-4">📝</div>
+                        <p>Escribe tu novela y haz clic en "Generar Todo Automático"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comic Builder Tab -->
+        <div id="comic-tab" class="tab-content hidden">
+            <div class="glass-panel rounded-3xl p-8">
+                <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                    <div>
+                        <h2 class="text-3xl font-bold comic-font text-amber-400 tracking-wider">TUS VIÑETAS</h2>
+                        <p class="text-sm text-gray-400 mt-1">Arrastra los bocadillos para reposicionarlos. Haz clic en ✏️ para editar el texto.</p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="regenerateAllImages()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-semibold text-sm transition">
+                            🔄 Regenerar Imágenes
+                        </button>
+                        <button onclick="addManualPanel()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 rounded-lg font-semibold text-sm transition">
+                            + Añadir Viñeta
+                        </button>
+                        <button onclick="clearComic()" class="px-4 py-2 bg-red-600/50 hover:bg-red-600 rounded-lg font-semibold text-sm transition">
+                            Limpiar Todo
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Comic Canvas -->
+                <div id="comic-canvas" class="bg-white rounded-xl p-8 min-h-[800px] relative">
+                    <div class="absolute inset-0 pointer-events-none opacity-5" style="background-image: radial-gradient(circle, #000 1px, transparent 1px); background-size: 20px 20px;"></div>
+                    
+                    <h1 id="comic-title" class="text-5xl comic-font text-black text-center mb-8 tracking-wider border-b-4 border-black pb-4" contenteditable="true">
+                        MI CÓMIC
+                    </h1>
+                    
+                    <div id="comic-panels" class="space-y-8">
+                        <!-- Panels will be added here -->
+                    </div>
+                </div>
+
+                <!-- Edit Modal -->
+                <div id="edit-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 backdrop-blur-sm">
+                    <div class="bg-gray-900 rounded-2xl p-6 max-w-md w-full mx-4 border border-white/20 shadow-2xl">
+                        <h3 class="text-xl font-bold mb-4 text-indigo-300">Editar Bocadillo</h3>
+                        <textarea id="edit-bubble-text" class="w-full bg-gray-800 rounded-lg p-3 text-white h-32 mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                        <div class="flex gap-2 mb-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="bubble-type" value="speech" checked class="text-indigo-500">
+                                <span class="text-sm">Normal</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="bubble-type" value="thought" class="text-indigo-500">
+                                <span class="text-sm">Pensamiento</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="bubble-type" value="shout" class="text-indigo-500">
+                                <span class="text-sm">Grito</span>
+                            </label>
+                        </div>
+                        <div class="flex justify-end gap-3">
+                            <button onclick="closeEditModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">Cancelar</button>
+                            <button onclick="saveBubbleEdit()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-semibold">Guardar Cambios</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="mt-6 bg-indigo-900/30 rounded-xl p-4 border border-indigo-500/30">
+                    <h4 class="font-bold text-indigo-300 mb-2">💡 Controles:</h4>
+                    <ul class="text-sm text-gray-300 space-y-1 grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <li>• <strong>Arrastrar:</strong> Mueve los bocadillos dentro de la viñeta</li>
+                        <li>• <strong>Clic en ✏️:</strong> Edita el texto del bocadillo</li>
+                        <li>• <strong>Doble clic:</strong> Edición rápida del texto</li>
+                        <li>• <strong>Botón derecho:</strong> Eliminar bocadillo</li>
+                        <li>• <strong>Scroll:</strong> Zoom en el canvas (si es necesario)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Tab -->
+        <div id="export-tab" class="tab-content hidden">
+            <div class="glass-panel rounded-3xl p-8 text-center">
+                <h2 class="text-3xl font-bold novel-font text-emerald-300 mb-6">Exportar Tu Cómic</h2>
+                
+                <div class="max-w-2xl mx-auto space-y-6">
+                    <div class="bg-gray-900/50 rounded-2xl p-8 border border-white/10">
+                        <div class="w-24 h-24 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl">
+                            📄
+                        </div>
+                        <h3 class="text-xl font-bold mb-2">PDF Profesional</h3>
+                        <p class="text-gray-400 mb-6">Incluye todas las viñetas, bocadillos posicionados y texto editable</p>
+                        
+                        <div class="space-y-4 mb-6 text-left max-w-md mx-auto">
+                            <label class="flex items-center gap-3">
+                                <input type="checkbox" id="export-hd" checked class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500">
+                                <span>Alta resolución (300 DPI)</span>
+                            </label>
+                            <label class="flex items-center gap-3">
+                                <input type="checkbox" id="export-full" checked class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500">
+                                <span>Página completa (A4)</span>
+                            </label>
+                        </div>
+                        
+                        <button onclick="exportToPDF()" class="w-full btn-cyber py-4 rounded-xl text-white font-bold text-lg shadow-2xl hover:scale-105 transition flex items-center justify-center gap-3">
+                            <span>⬇️</span> Descargar PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl border border-white/20 hidden z-50 transition-all duration-300">
+        <span id="toast-message">Mensaje</span>
+    </div>
+
+    <script>
+        // Global State
+        let scenes = [];
+        let comicPanels = [];
+        let isProcessing = false;
+        let currentEditBubble = null;
+        let dragItem = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        // Tab Switching
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`${tab}-tab`).classList.remove('hidden');
+            
+            if (tab === 'comic' && comicPanels.length === 0 && scenes.length > 0) {
+                renderComicFromScenes();
+            }
+        }
+
+        // Text Analysis
+        function analyzeNovel() {
+            const text = document.getElementById('novel-input').value;
+            if (!text.trim()) {
+                showToast('Por favor, escribe algo primero');
+                return;
+            }
+
+            // Split into scenes (paragraphs)
+            const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+            
+            scenes = paragraphs.map((paragraph, idx) => {
+                // Extract dialogues (text between quotes or after em-dash)
+                const dialogues = [];
+                const dialoguePatterns = [
+                    /"([^"]+)"/g,  // "text"
+                    /"([^"]+)"/g,  // "text"
+                    /—([^—\n]+)(?=\n|$|—)/g,  // —dialogue
+                    /^—\s*(.+)$/gm,  // Start of line with em-dash
+                    /«([^»]+)»/g,  // French quotes
+                ];
+                
+                dialoguePatterns.forEach(pattern => {
+                    let match;
+                    while ((match = pattern.exec(paragraph)) !== null) {
+                        dialogues.push({
+                            text: match[1].trim(),
+                            type: 'speech',
+                            speaker: detectSpeaker(paragraph, match.index)
+                        });
+                    }
+                });
+
+                // Extract thoughts (text between asterisks or in italics)
+                const thoughts = [];
+                const thoughtPattern = /\*([^*]+)\*/g;
+                let thoughtMatch;
+                while ((thoughtMatch = thoughtPattern.exec(paragraph)) !== null) {
+                    thoughts.push({
+                        text: thoughtMatch[1].trim(),
+                        type: 'thought'
+                    });
+                }
+
+                // Extract narration (first sentence or descriptive text)
+                const narration = paragraph.split(/[.!?]/)[0] + '.';
+                
+                // Create image prompt from description
+                const imagePrompt = createImagePrompt(paragraph);
+
+                return {
+                    id: idx,
+                    text: paragraph,
+                    narration: narration,
+                    dialogues: dialogues,
+                    thoughts: thoughts,
+                    imagePrompt: imagePrompt,
+                    imageUrl: null,
+                    status: 'pending'
+                };
+            });
+
+            // Update counters
+            const wordCount = text.trim().split(/\s+/).length;
+            const dialogueCount = scenes.reduce((acc, s) => acc + s.dialogues.length + s.thoughts.length, 0);
+            
+            document.getElementById('word-count').textContent = `${wordCount} palabras`;
+            document.getElementById('scene-count').textContent = `${scenes.length} escenas`;
+            document.getElementById('dialog-count').textContent = `${dialogueCount} diálogos`;
+
+            showToast(`Análisis completo: ${scenes.length} escenas, ${dialogueCount} diálogos detectados`);
+            return scenes;
+        }
+
+        function detectSpeaker(paragraph, dialogueIndex) {
+            // Simple heuristic: look for "Name said" before the dialogue
+            const beforeText = paragraph.substring(0, dialogueIndex);
+            const speakerMatch = beforeText.match(/(\w+)\s+(?:dijo|gritó|susurró|preguntó|respondió)/i);
+            return speakerMatch ? speakerMatch[1] : null;
+        }
+
+        function createImagePrompt(text) {
+            const genre = document.getElementById('genre-select').value;
+            const style = document.getElementById('style-select').value;
+            
+            const genreModifiers = {
+                'fantasy': 'fantasy art, magical, medieval, epic lighting',
+                'scifi': 'science fiction, futuristic, neon lights, high tech',
+                'noir': 'noir style, black and white, shadows, detective, rain',
+                'romance': 'romantic, soft lighting, emotional, warm colors',
+                'horror': 'horror, dark, ominous, scary atmosphere',
+                'adventure': 'adventure, action, dynamic pose, dramatic'
+            };
+
+            const styleModifiers = {
+                'comic': 'comic book style, bold lines, vibrant colors',
+                'manga': 'manga style, black and white, detailed ink',
+                'realistic': 'photorealistic, detailed, cinematic',
+                'watercolor': 'watercolor painting, artistic, soft'
+            };
+
+            // Extract key visual elements (first 200 chars)
+            const description = text.substring(0, 200).replace(/["«»*—]/g, '');
+            
+            return `${description}, ${genreModifiers[genre]}, ${styleModifiers[style]}, high quality, detailed scene`;
+        }
+
+        // Auto Process Everything
+        async function startAutoProcess() {
+            if (isProcessing) return;
+            
+            // First analyze
+            analyzeNovel();
+            
+            if (scenes.length === 0) {
+                showToast('No se detectaron escenas. Escribe más contenido.');
+                return;
+            }
+
+            isProcessing = true;
+            switchTab('process');
+            updateProgress(0, 'Iniciando generación automática...');
+
+            // Process each scene
+            for (let i = 0; i < scenes.length; i++) {
+                const scene = scenes[i];
+                scene.status = 'processing';
+                updateSceneCard(i);
+                
+                updateProgress((i / scenes.length) * 100, `Generando imagen ${i + 1} de ${scenes.length}...`);
+                
+                // Generate image
+                try {
+                    const imageUrl = await generateImageForScene(scene);
+                    scene.imageUrl = imageUrl;
+                    scene.status = 'completed';
+                } catch (error) {
+                    console.error('Error generating image:', error);
+                    scene.status = 'error';
+                }
+                
+                updateSceneCard(i);
+                await new Promise(resolve => setTimeout(resolve, 1500)); // Rate limiting
+            }
+
+            updateProgress(100, '¡Completado! Creando viñetas...');
+            
+            // Create comic panels
+            setTimeout(() => {
+                createComicPanels();
+                isProcessing = false;
+                showToast('¡Cómic generado automáticamente! Ve a la pestaña Cómic para editar.');
+                switchTab('comic');
+                updateProgress(0, 'Listo');
+            }, 1000);
+        }
+
+        async function generateImageForScene(scene) {
+            const encodedPrompt = encodeURIComponent(scene.imagePrompt);
+            const width = 768;
+            const height = 512;
+            
+            // Using Pollinations.ai (free, no API key)
+            return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true&seed=${scene.id}`;
+        }
+
+        function updateProgress(percent, text) {
+            document.getElementById('progress-bar').style.width = `${percent}%`;
+            document.getElementById('progress-text').textContent = `${Math.round(percent)}%`;
+            document.getElementById('current-action').textContent = text;
+        }
+
+        function updateSceneCard(index) {
+            const container = document.getElementById('scenes-container');
+            const scene = scenes[index];
+            
+            // If cards don't exist yet, create them all
+            if (container.children.length <= index || container.children[0].textContent.includes('Escribe tu novela')) {
+                renderAllSceneCards();
+                return;
+            }
+
+            const card = document.getElementById(`scene-card-${index}`);
+            if (!card) return;
+
+            const statusColors = {
+                'pending': 'border-gray-600 bg-gray-800/30',
+                'processing': 'border-amber-500 bg-amber-900/20',
+                'completed': 'border-green-500 bg-green-900/20',
+                'error': 'border-red-500 bg-red-900/20'
+            };
+
+            const statusIcons = {
+                'pending': '⏳',
+                'processing': '⚡',
+                'completed': '✓',
+                'error': '✗'
+            };
+
+            card.className = `scene-card rounded-xl p-4 border-2 ${statusColors[scene.status]} relative overflow-hidden`;
+            
+            let imageHtml = '';
+            if (scene.imageUrl) {
+                imageHtml = `<img src="${scene.imageUrl}" class="w-full h-48 object-cover rounded-lg mb-3 border-2 border-black" alt="Scene ${index + 1}">`;
+            } else {
+                imageHtml = `<div class="w-full h-48 bg-gray-800 rounded-lg mb-3 flex items-center justify-center text-4xl">🎨</div>`;
+            }
+
+            card.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-xs font-bold uppercase tracking-wider ${scene.status === 'completed' ? 'text-green-400' : 'text-gray-400'}">
+                        Escena ${index + 1} ${statusIcons[scene.status]}
+                    </span>
+                    <span class="text-xs text-gray-500">${scene.dialogues.length} diálogos</span>
+                </div>
+                ${imageHtml}
+                <p class="text-sm text-gray-300 line-clamp-3 mb-2">${scene.text.substring(0, 150)}...</p>
+                <div class="flex flex-wrap gap-1">
+                    ${scene.dialogues.map(d => `<span class="text-xs bg-white/10 px-2 py-1 rounded">"${d.text.substring(0, 30)}..."</span>`).join('')}
+                </div>
+            `;
+        }
+
+        function renderAllSceneCards() {
+            const container = document.getElementById('scenes-container');
+            container.innerHTML = scenes.map((scene, idx) => `
+                <div id="scene-card-${idx}" class="scene-card rounded-xl p-4 border-2 border-gray-600 bg-gray-800/30">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-bold uppercase tracking-wider text-gray-400">Escena ${idx + 1} ⏳</span>
+                        <span class="text-xs text-gray-500">${scene.dialogues.length} diálogos</span>
+                    </div>
+                    <div class="w-full h-48 bg-gray-800 rounded-lg mb-3 flex items-center justify-center text-4xl">🎨</div>
+                    <p class="text-sm text-gray-300 line-clamp-3 mb-2">${scene.text.substring(0, 150)}...</p>
+                </div>
+            `).join('');
+        }
+
+        // Comic Creation
+        function createComicPanels() {
+            comicPanels = scenes.map((scene, idx) => ({
+                id: Date.now() + idx,
+                image: scene.imageUrl,
+                narration: scene.narration,
+                bubbles: [
+                    ...scene.dialogues.map((d, i) => ({
+                        id: `bubble-${idx}-${i}`,
+                        text: d.text,
+                        type: d.type,
+                        x: 20 + (i * 15),
+                        y: 15 + (i * 10),
+                        speaker: d.speaker
+                    })),
+                    ...scene.thoughts.map((t, i) => ({
+                        id: `thought-${idx}-${i}`,
+                        text: t.text,
+                        type: 'thought',
+                        x: 60,
+                        y: 20,
+                        speaker: null
+                    }))
+                ]
+            }));
+            
+            renderComic();
+        }
+
+        function renderComic() {
+            const container = document.getElementById('comic-panels');
+            container.innerHTML = '';
+
+            comicPanels.forEach((panel, idx) => {
+                const panelDiv = document.createElement('div');
+                panelDiv.className = 'comic-panel w-full mb-8 relative';
+                panelDiv.style.minHeight = '400px';
+                panelDiv.id = `comic-panel-${panel.id}`;
+                
+                // Determine layout based on bubble count
+                if (panel.bubbles.length > 2) {
+                    panelDiv.style.minHeight = '500px';
+                }
+
+                panelDiv.innerHTML = `
+                    <div class="absolute top-2 left-2 bg-black text-white text-xs px-2 py-1 rounded z-10 comic-font">
+                        ${idx + 1}
+                    </div>
+                    <img src="${panel.image}" class="w-full h-full object-cover absolute inset-0" alt="Panel ${idx + 1}">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent pointer-events-none"></div>
+                    ${panel.bubbles.map(bubble => createBubbleHtml(bubble, panel.id)).join('')}
+                    ${panel.narration ? `<div class="narration-box top-4 left-4" contenteditable="true">${panel.narration}</div>` : ''}
+                `;
+
+                container.appendChild(panelDiv);
+            });
+
+            setupDragAndDrop();
+        }
+
+        function createBubbleHtml(bubble, panelId) {
+            const bubbleClass = bubble.type === 'thought' ? 'thought-bubble' : 
+                               bubble.type === 'shout' ? 'shout-bubble' : 'speech-bubble';
+            
+            const tailClass = bubble.x < 50 ? 'bubble-tail-left' : 'bubble-tail-right';
+            
+            return `
+                <div id="${bubble.id}" 
+                     class="${bubbleClass} ${tailClass} speech-font" 
+                     style="left: ${bubble.x}%; top: ${bubble.y}%;"
+                     data-panel="${panelId}"
+                     onmousedown="startDrag(event, '${bubble.id}')"
+                     oncontextmenu="deleteBubble(event, '${bubble.id}')"
+                     ondblclick="openEditBubble('${bubble.id}')">
+                    ${bubble.text}
+                    <div class="bubble-edit-btn" onclick="event.stopPropagation(); openEditBubble('${bubble.id}')">✏️</div>
+                </div>
+            `;
+        }
+
+        // Drag and Drop
+        function startDrag(e, bubbleId) {
+            if (e.target.classList.contains('bubble-edit-btn')) return;
+            
+            dragItem = document.getElementById(bubbleId);
+            const rect = dragItem.getBoundingClientRect();
+            const parentRect = dragItem.parentElement.getBoundingClientRect();
+            
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            dragItem.classList.add('dragging');
+            
+            document.addEventListener('mousemove', onDrag);
+            document.addEventListener('mouseup', stopDrag);
+            e.preventDefault();
+        }
+
+        function onDrag(e) {
+            if (!dragItem) return;
+            
+            const parent = dragItem.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            
+            let x = e.clientX - parentRect.left - dragOffset.x;
+            let y = e.clientY - parentRect.top - dragOffset.y;
+            
+            // Constrain to parent
+            x = Math.max(0, Math.min(x, parentRect.width - dragItem.offsetWidth));
+            y = Math.max(0, Math.min(y, parentRect.height - dragItem.offsetHeight));
+            
+            // Convert to percentages
+            const xPercent = (x / parentRect.width) * 100;
+            const yPercent = (y / parentRect.height) * 100;
+            
+            dragItem.style.left = `${xPercent}%`;
+            dragItem.style.top = `${yPercent}%`;
+            
+            // Update data
+            const bubbleId = dragItem.id;
+            const panelId = parseInt(dragItem.dataset.panel);
+            const panel = comicPanels.find(p => p.id === panelId);
+            const bubble = panel.bubbles.find(b => b.id === bubbleId);
+            if (bubble) {
+                bubble.x = xPercent;
+                bubble.y = yPercent;
+            }
+        }
+
+        function stopDrag() {
+            if (dragItem) {
+                dragItem.classList.remove('dragging');
+                dragItem = null;
+            }
+            document.removeEventListener('mousemove', onDrag);
+            document.removeEventListener('mouseup', stopDrag);
+        }
+
+        function setupDragAndDrop() {
+            // Touch support
+            document.querySelectorAll('.speech-bubble, .thought-bubble').forEach(bubble => {
+                bubble.addEventListener('touchstart', handleTouchStart, {passive: false});
+                bubble.addEventListener('touchmove', handleTouchMove, {passive: false});
+                bubble.addEventListener('touchend', handleTouchEnd);
+            });
+        }
+
+        let touchItem = null;
+        let touchOffset = { x: 0, y: 0 };
+
+        function handleTouchStart(e) {
+            if (e.target.classList.contains('bubble-edit-btn')) return;
+            touchItem = e.currentTarget;
+            const touch = e.touches[0];
+            const rect = touchItem.getBoundingClientRect();
+            touchOffset.x = touch.clientX - rect.left;
+            touchOffset.y = touch.clientY - rect.top;
+            touchItem.classList.add('dragging');
+        }
+
+        function handleTouchMove(e) {
+            if (!touchItem) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const parent = touchItem.parentElement;
+            const parentRect = parent.getBoundingClientRect();
+            
+            let x = touch.clientX - parentRect.left - touchOffset.x;
+            let y = touch.clientY - parentRect.top - touchOffset.y;
+            
+            x = Math.max(0, Math.min(x, parentRect.width - touchItem.offsetWidth));
+            y = Math.max(0, Math.min(y, parentRect.height - touchItem.offsetHeight));
+            
+            const xPercent = (x / parentRect.width) * 100;
+            const yPercent = (y / parentRect.height) * 100;
+            
+            touchItem.style.left = `${xPercent}%`;
+            touchItem.style.top = `${yPercent}%`;
+        }
+
+        function handleTouchEnd() {
+            if (touchItem) {
+                // Save position
+                const bubbleId = touchItem.id;
+                const panelId = parseInt(touchItem.dataset.panel);
+                const panel = comicPanels.find(p => p.id === panelId);
+                const bubble = panel.bubbles.find(b => b.id === bubbleId);
+                if (bubble) {
+                    bubble.x = parseFloat(touchItem.style.left);
+                    bubble.y = parseFloat(touchItem.style.top);
+                }
+                
+                touchItem.classList.remove('dragging');
+                touchItem = null;
+            }
+        }
+
+        // Bubble Editing
+        function openEditBubble(bubbleId) {
+            const [panelId] = bubbleId.split('-').slice(1);
+            const panel = comicPanels.find(p => p.id === parseInt(panelId));
+            const bubble = panel.bubbles.find(b => b.id === bubbleId);
+            
+            if (!bubble) return;
+            
+            currentEditBubble = bubble;
+            document.getElementById('edit-bubble-text').value = bubble.text;
+            document.querySelector(`input[name="bubble-type"][value="${bubble.type}"]`).checked = true;
+            document.getElementById('edit-modal').classList.remove('hidden');
+            document.getElementById('edit-modal').classList.add('flex');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+            document.getElementById('edit-modal').classList.remove('flex');
+            currentEditBubble = null;
+        }
+
+        function saveBubbleEdit() {
+            if (!currentEditBubble) return;
+            
+            const newText = document.getElementById('edit-bubble-text').value;
+            const newType = document.querySelector('input[name="bubble-type"]:checked').value;
+            
+            currentEditBubble.text = newText;
+            currentEditBubble.type = newType;
+            
+            // Re-render specific bubble
+            const bubbleEl = document.getElementById(currentEditBubble.id);
+            if (bubbleEl) {
+                bubbleEl.className = bubbleEl.className.replace(/thought-bubble|shout-bubble|speech-bubble/g, '');
+                bubbleEl.classList.add(newType === 'thought' ? 'thought-bubble' : newType === 'shout' ? 'shout-bubble' : 'speech-bubble');
+                // Remove text nodes but keep edit button
+                const btn = bubbleEl.querySelector('.bubble-edit-btn');
+                bubbleEl.innerHTML = newText;
+                bubbleEl.appendChild(btn);
+            }
+            
+            closeEditModal();
+            showToast('Bocadillo actualizado');
+        }
+
+        function deleteBubble(e, bubbleId) {
+            e.preventDefault();
+            if (!confirm('¿Eliminar este bocadillo?')) return;
+            
+            const element = document.getElementById(bubbleId);
+            if (element) {
+                const panelId = parseInt(element.dataset.panel);
+                const panel = comicPanels.find(p => p.id === panelId);
+                panel.bubbles = panel.bubbles.filter(b => b.id !== bubbleId);
+                element.remove();
+                showToast('Bocadillo eliminado');
+            }
+        }
+
+        // Utilities
+        function addManualPanel() {
+            const url = prompt('URL de la imagen:');
+            if (!url) return;
+            
+            const panel = {
+                id: Date.now(),
+                image: url,
+                narration: '',
+                bubbles: []
+            };
+            
+            comicPanels.push(panel);
+            
+            const container = document.getElementById('comic-panels');
+            const panelDiv = document.createElement('div');
+            panelDiv.className = 'comic-panel w-full mb-8 relative';
+            panelDiv.style.minHeight = '400px';
+            panelDiv.id = `comic-panel-${panel.id}`;
+            panelDiv.innerHTML = `
+                <img src="${url}" class="w-full h-full object-cover absolute inset-0">
+                <div class="absolute top-2 left-2 bg-black text-white text-xs px-2 py-1 rounded z-10 comic-font">
+                    ${comicPanels.length}
+                </div>
+            `;
+            
+            container.appendChild(panelDiv);
+        }
+
+        function regenerateAllImages() {
+            if (!confirm('¿Regenerar todas las imágenes? Esto puede tardar unos minutos.')) return;
+            
+            scenes.forEach((scene, idx) => {
+                scene.imageUrl = null;
+                scene.status = 'pending';
+            });
+            
+            startAutoProcess();
+        }
+
+        function clearComic() {
+            if (!confirm('¿Eliminar todas las viñetas?')) return;
+            comicPanels = [];
+            document.getElementById('comic-panels').innerHTML = '';
+            showToast('Cómic limpiado');
+        }
+
+        function clearText() {
+            if (confirm('¿Borrar todo el texto?')) {
+                document.getElementById('novel-input').value = '';
+                scenes = [];
+                document.getElementById('word-count').textContent = '0 palabras';
+                document.getElementById('scene-count').textContent = '0 escenas';
+                document.getElementById('dialog-count').textContent = '0 diálogos';
+            }
+        }
+
+        // Export
+        function exportToPDF() {
+            const element = document.getElementById('comic-canvas');
+            const title = document.getElementById('comic-title').textContent;
+            
+            const opt = {
+                margin: 10,
+                filename: `${title.replace(/\s+/g, '_')}_comic.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { 
+                    scale: document.getElementById('export-hd').checked ? 2 : 1,
+                    useCORS: true,
+                    letterRendering: true,
+                    backgroundColor: '#ffffff'
+                },
+                jsPDF: { 
+                    unit: 'mm', 
+                    format: 'a4', 
+                    orientation: 'portrait'
+                }
+            };
+            
+            showToast('Generando PDF profesional...');
+            
+            html2pdf().set(opt).from(element).save().then(() => {
+                showToast('¡PDF descargado!');
+            }).catch(err => {
+                showToast('Error: ' + err.message);
+            });
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        // Demo
+        function loadDemo() {
+            const demoText = `CAPÍTULO 1: EL DESPERTAR
+
+El sol de poniente teñía de sangre las torres del castillo abandonado. Kael se ajustó la capa roja, sus dedos rozando el empuñadura de la espada legendaria.
+
+—¿Quién está ahí? —susurró Elena desde la ventana, su voz temblorosa.
+
+Una figura emergió de las sombras. Era alto, con una capa negra que absorbía la luz.
+
+—Soy el último guardián —dijo con voz profunda—. He venido a buscarte, Elena.
+
+Elena retrocedió, su corazón latía con fuerza. «Esto no puede estar pasando», pensó desesperada. «Los guardianes son solo leyendas.»
+
+—No iré a ninguna parte —gritó, agarrando un candelabro como arma—. ¡Dime qué quieres!
+
+El hombre sonrió, revelando dientes perfectos.
+
+—Quiero lo que tu padre me robó hace veinte años. Y tú, querida, eres la llave.
+
+De repente, el suelo tembló. Una luz azul emanó del medallón de Elena, iluminando la habitación con intensidad cegadora.
+
+—¡No! —gritó el guardián, protegiéndose los ojos—. ¡No sabes lo que estás desatando!
+
+El destino de tres reinos dependía de lo que sucediera en los próximos segundos.`;
+
+            document.getElementById('novel-input').value = demoText;
+            document.getElementById('genre-select').value = 'fantasy';
+            document.getElementById('style-select').value = 'comic';
+            analyzeNovel();
+            showToast('Demo cargado. Haz clic en "Generar Todo Automático"');
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeEditModal();
+            }
+            if (e.ctrlKey && e.key === 'Enter') {
+                startAutoProcess();
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('novel-input').addEventListener('input', (e) => {
+                const words = e.target.value.trim().split(/\s+/).filter(w => w.length > 0).length;
+                document.getElementById('word-count').textContent = `${words} palabras`;
+            });
+        });
+    </script>
+</body>
+</html>
